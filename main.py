@@ -17,10 +17,18 @@ def patch():
     pytorch_utils.is_torch_greater_or_equal_than_1_12 = \
         parsed_torch_version_base >= version.parse("1.12")
     
-def main():
+def user_chat_exchange():
     patch()
-    print(src.prompter.generate_text("Once upon a time, upon the hilltops of "))
 
+    while True:
+        user_prompt = input("Prompt: ")
+        if not user_prompt:
+            break
+        for prompt_part in src.prompter.process_prompt(user_prompt):
+            print(prompt_part, end="", flush=True)
+
+def main():
+    user_chat_exchange()
 
 if __name__ == '__main__':
     exit(main())

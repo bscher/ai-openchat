@@ -1,65 +1,68 @@
-from threading import Thread
-from typing import Optional, Iterable
-import torch
+import random
+import keyboard 
+from typing import Iterable
+
 import transformers
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
+from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
+import torch
 
 # Model name from the HuggingFace hub
 #model_name = "deepseek-ai/DeepSeek-R1" # Requires over 700 GBs
 #model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B" # Too much memory?
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 
-def chat_llama3_8b(
-        message: str, 
-        history: Optional[list] = None, 
-        temperature: float = 0.6, 
-        max_new_tokens: int = 100
-    ) -> Iterable[str]:
-    """
-    Generate a streaming response using the llama3-32B model.
-    Args:
-        message (str): The input message.
-        temperature (float): The temperature for generating the response.
-        max_new_tokens (int): The maximum number of new tokens to generate.
-    Returns:
-        Iterable[str]: The generated response, in parts.
-    """
-    # Load the tokenizer and model
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(model_name, device_map="cuda", trust_remote_code=True)
-    terminators = [
-        tokenizer.eos_token_id,
-        tokenizer.convert_tokens_to_ids("<|eot_id|>")
-    ]
 
-    conversation = []
-    for user, assistant in (history or []):
-        conversation.extend([{"role": "user", "content": user}, {"role": "assistant", "content": assistant}])
-    conversation.append({"role": "user", "content": message})
+print("Loading model...")
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name, torch_dtype=torch.bfloat16, device_map="cuda"
+)
+print("... model loaded")
 
-    input_ids = tokenizer.apply_chat_template(conversation, return_tensors="pt").to(model.device)
-    
-    streamer = TextIteratorStreamer(tokenizer, timeout=10.0, skip_prompt=True, skip_special_tokens=True)
-        
-    model.generate(
-        input_ids=input_ids,
-        streamer=streamer,
-        max_new_tokens=max_new_tokens,
-        do_sample=True,
-        temperature=temperature,
-        eos_token_id=terminators
+_, _start_think_token, end_think_token = tokenizer.encode("<think></think>")
+min_thinking_tokens = 128
+replacements = ["\nWait, but", "\nHmm", "\nSo"]
+
+@torch.inference_mode
+def reasoning_effort(question: str, min_thinking_tokens: int) -> Iterable[str]:
+    tokens = tokenizer.apply_chat_template(
+        [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": "<think>\n"},
+        ],
+        continue_final_message=True,
+        return_tensors="pt",
     )
+    tokens = tokens.to(model.device)
+    kv = DynamicCache()
+    n_thinking_tokens = 0
 
-    outputs = []
-    for text in streamer:
-        outputs.append(text)
-        #print(outputs)
-        yield "".join(outputs)
-        
-def generate_text(prompt: str) -> str:
+    yield tokenizer.decode(list(tokens[0]))
+    while True:
+        out = model(input_ids=tokens, past_key_values=kv, use_cache=True)
+        next_token = torch.multinomial(
+            torch.softmax(out.logits[0, -1, :], dim=-1), 1
+        ).item()
+        kv = out.past_key_values
 
-    generated_text = "".join(output_part for output_part in chat_llama3_8b(prompt))
+        if (
+            next_token in (end_think_token, model.config.eos_token_id)
+            and n_thinking_tokens < min_thinking_tokens
+        ):
+            replacement = random.choice(replacements)
+            yield replacement
+            replacement_tokens = tokenizer.encode(replacement)
+            n_thinking_tokens += len(replacement_tokens)
+            tokens = torch.tensor([replacement_tokens]).to(tokens.device)
+        elif next_token == model.config.eos_token_id:
+            break
+        else:
+            yield tokenizer.decode([next_token])
+            n_thinking_tokens += 1
+            tokens = torch.tensor([[next_token]]).to(tokens.device)
 
-    print("-- Generated Text --")
-    print(generated_text)
-    print("--------------------")
+def process_prompt(prompt: str) -> Iterable[str]:
+    print(f"-- Processing prompt: '{prompt}' --\n\n")
+    for chunk in reasoning_effort(prompt, min_thinking_tokens):
+        yield chunk
+    print(f"\n\n-- Finished processing prompt: '{prompt}' --")
