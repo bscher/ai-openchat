@@ -24,7 +24,7 @@ min_thinking_tokens = 128
 replacements = ["\nWait, but", "\nHmm", "\nSo"]
 
 @torch.inference_mode
-def reasoning_effort(question: str, min_thinking_tokens: int) -> Iterable[str]:
+def _reasoning_effort(question: str, min_thinking_tokens: int) -> Iterable[str]:
     tokens = tokenizer.apply_chat_template(
         [
             {"role": "user", "content": question},
@@ -62,7 +62,7 @@ def reasoning_effort(question: str, min_thinking_tokens: int) -> Iterable[str]:
             tokens = torch.tensor([[next_token]]).to(tokens.device)
 
 def process_prompt(prompt: str) -> Iterable[str]:
-    print(f"-- Processing prompt: '{prompt}' --\n\n")
-    for chunk in reasoning_effort(prompt, min_thinking_tokens):
+    print(f"\n-- Processing prompt: '{prompt}' --\n\n")
+    for chunk in _reasoning_effort(prompt, min_thinking_tokens):
         yield chunk
-    print(f"\n\n-- Finished processing prompt: '{prompt}' --")
+    print(f"\n\n-- Finished processing prompt: '{prompt}' --\n\n")

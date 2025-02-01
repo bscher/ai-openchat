@@ -3,9 +3,9 @@
 import src
 
 def patch():
+    # For backwards compatibility since some remote code on Hub still rely on these variables.
     from packaging import version
 
-    # For backwards compatibility since some remote code on Hub still rely on these variables.
     torch = src.prompter.torch
     pytorch_utils = src.prompter.transformers.pytorch_utils
     parsed_torch_version_base = version.parse(version.parse(torch.__version__).base_version)
@@ -23,7 +23,8 @@ def user_chat_exchange():
     while True:
         user_prompt = input("Prompt: ")
         if not user_prompt:
-            break
+            return
+        print("\n\n")
         for prompt_part in src.prompter.process_prompt(user_prompt):
             print(prompt_part, end="", flush=True)
 
