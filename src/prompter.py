@@ -1,5 +1,4 @@
 import random
-import keyboard 
 from typing import Iterable
 
 import transformers
@@ -7,8 +6,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 import torch
 
 # Model name from the HuggingFace hub
-#model_name = "deepseek-ai/DeepSeek-R1" # Requires over 700 GBs
-#model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B" # Too much memory?
+# model_name = "deepseek-ai/DeepSeek-R1" # Requires over 700 GBs
+# model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B" # Too much memory?
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 
 
@@ -22,6 +21,7 @@ print("... model loaded")
 _, _start_think_token, end_think_token = tokenizer.encode("<think></think>")
 min_thinking_tokens = 128
 replacements = ["\nWait, but", "\nHmm", "\nSo"]
+
 
 @torch.inference_mode
 def _reasoning_effort(question: str, min_thinking_tokens: int) -> Iterable[str]:
@@ -60,6 +60,7 @@ def _reasoning_effort(question: str, min_thinking_tokens: int) -> Iterable[str]:
             yield tokenizer.decode([next_token])
             n_thinking_tokens += 1
             tokens = torch.tensor([[next_token]]).to(tokens.device)
+
 
 def process_prompt(prompt: str) -> Iterable[str]:
     print(f"\n-- Processing prompt: '{prompt}' --\n\n")
